@@ -34,13 +34,14 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.Arrays;
+import java.util.Iterator;
 
 import android.app.ActionBar;
 import android.app.Activity;
@@ -200,7 +201,7 @@ public class ComposeMessageActivity extends Activity
     public static final int REQUEST_CODE_ECM_EXIT_DIALOG  = 107;
     public static final int REQUEST_CODE_ADD_CONTACT      = 108;
     public static final int REQUEST_CODE_PICK             = 109;
-    public static final int REQUEST_CODE_ADD_RECIPIENTS   = 111;
+    public static final int REQUEST_CODE_ADD_RECIPIENTS   = 110;
 
     private static final String TAG = "Mms/compose";
 
@@ -311,7 +312,6 @@ public class ComposeMessageActivity extends Activity
 
     private RecipientsEditor mRecipientsEditor;  // UI control for editing recipients
     private ImageButton mRecipientsPicker;       // UI control for recipients picker
-    private ImageButton mRecipientsSelector;     // UI control for recipients selector
 
     // For HW keyboard, 'mIsKeyboardOpen' indicates if the HW keyboard is open.
     // For SW keyboard, 'mIsKeyboardOpen' should always be true.
@@ -1857,17 +1857,12 @@ public class ComposeMessageActivity extends Activity
             View stubView = stub.inflate();
             mRecipientsEditor = (RecipientsEditor) stubView.findViewById(R.id.recipients_editor);
             mRecipientsPicker = (ImageButton) stubView.findViewById(R.id.recipients_picker);
-            mRecipientsSelector = (ImageButton) stubView.findViewById(R.id.recipients_selector);
-            mRecipientsSelector.setVisibility(View.VISIBLE);
         } else {
             mRecipientsEditor = (RecipientsEditor)findViewById(R.id.recipients_editor);
             mRecipientsEditor.setVisibility(View.VISIBLE);
             mRecipientsPicker = (ImageButton)findViewById(R.id.recipients_picker);
-            mRecipientsSelector = (ImageButton)findViewById(R.id.recipients_selector);
-            mRecipientsSelector.setVisibility(View.VISIBLE);
         }
         mRecipientsPicker.setOnClickListener(this);
-        mRecipientsSelector.setOnClickListener(this);
 
         mRecipientsEditor.setAdapter(new ChipsRecipientAdapter(this));
         mRecipientsEditor.populate(recipients);
@@ -3206,8 +3201,7 @@ public class ComposeMessageActivity extends Activity
                 break;
 
             case REQUEST_CODE_ADD_RECIPIENTS:
-                insertNumbersIntoRecipientsEditor(
-                        data.getStringArrayListExtra(SelectRecipientsList.EXTRA_RECIPIENTS));
+                insertNumbersIntoRecipientsEditor((String[])data.getExtra("com.android.mms.ui.AddRecipients"));
                 break;
 
             default:
@@ -3216,16 +3210,17 @@ public class ComposeMessageActivity extends Activity
         }
     }
 
-    private void insertNumbersIntoRecipientsEditor(final ArrayList<String> numbers) {
-        ContactList list = ContactList.getByNumbers(numbers, true);
-        ContactList existing = mRecipientsEditor.constructContactsFromInput(true);
-        for (Contact contact : existing) {
-            if (!contact.existsInDatabase()) {
-                list.add(contact);
+    private void insertNumbersIntoRecipientsEditor(String[] numbers) {
+        ContactList list = ContactList.getByNumbers(Arrays.asList(numbers), true);
+        // only add new contacts
+        ContactList existing=mRecipientsEditor.constructContactsFromInput(true);
+        Iterator<Contact> nextContact = list.iterator();
+        while (nextContact.hasNext()){
+            Contact contact = nextContact.next();
+            if (!existing.contains(contact)){
+                mRecipientsEditor.appendContact(contact);
             }
         }
-        mRecipientsEditor.setText(null);
-        mRecipientsEditor.populate(list);
     }
 
     private void processPickResult(final Intent data) {
@@ -3583,33 +3578,9 @@ public class ComposeMessageActivity extends Activity
         if ((v == mSendButtonSms || v == mSendButtonMms) && isPreparedForSending()) {
             confirmSendMessageIfNeeded();
         } else if (v == mRecipientsPicker) {
-            launchMultiplePhonePicker();
-        } else if (v == mRecipientsSelector) {
-            Intent intent = new Intent(ComposeMessageActivity.this, SelectRecipientsList.class);
-            ContactList contacts = mRecipientsEditor.constructContactsFromInput(false);
-            intent.putExtra(SelectRecipientsList.EXTRA_RECIPIENTS, contacts.getNumbers());
+            Intent intent = new Intent(ComposeMessageActivity.this, AddRecipientsList.class);
             startActivityForResult(intent, REQUEST_CODE_ADD_RECIPIENTS);
         }
-    }
-
-    private void launchMultiplePhonePicker() {
-        Intent intent = new Intent(Intents.ACTION_GET_MULTIPLE_PHONES);
-        intent.addCategory("android.intent.category.DEFAULT");
-        intent.setType(Phone.CONTENT_TYPE);
-        // We have to wait for the constructing complete.
-        ContactList contacts = mRecipientsEditor.constructContactsFromInput(true);
-        int urisCount = 0;
-        Uri[] uris = new Uri[contacts.size()];
-        urisCount = 0;
-        for (Contact contact : contacts) {
-            if (Contact.CONTACT_METHOD_TYPE_PHONE == contact.getContactMethodType()) {
-                    uris[urisCount++] = contact.getPhoneUri(false);
-            }
-        }
-        if (urisCount > 0) {
-            intent.putExtra(Intents.EXTRA_PHONE_URIS, uris);
-        }
-        startActivityForResult(intent, REQUEST_CODE_PICK);
     }
 
     @Override
